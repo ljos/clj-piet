@@ -3,13 +3,14 @@
   (:import java.io.File)
   (:import java.awt.Color))
 
-(def ^:private stack (atom '(2 2 2 2 2 2 2 2 1 1 3)))
-(def ^:private functions (atom {}))
-(def ^:private pointer (atom '(right down left up)))
-(def ^:private switch (atom '(left right)))
 
+
+(def pointer-cycle '(right down left up))
+(def chooser-cycle '(left right))
 (def lightness-cycle '(light normal dark))
 (def hue-cycle '(red yellow green cyan blue magenta))
+
+(defstruct piet-machine :dp :cc :value :stack)
 
 
 (def colours
@@ -44,108 +45,95 @@
 
 (defn piet-interpreter [image codel-size]
   (let [codel-map (grab-pixels image codel-size)]
-    codel-map))
+    (struct piet-machine pointer-cycle chooser-cycle nil '())))
 
+(defn piet-pop [m]
+  (update-in (update-in m [:value]
+               (partial cons (peek (:stack m))))
+    [:stack] pop))
 
-(defmacro call-piet
-  ([f]
-     `((get @functions '~f)))
-  ([f n]
-     `((get @functions '~f) ~n)))
+(defn piet-push [m]
+  (update-in (update-in m [:stack]
+               (comp flatten (partial cons (first (:value m)))))
+             [:value]
+             empty))
 
-(defmacro def-piet [name args & body]
-  `(swap! functions
-          assoc
-          '~name
-          ~(case name
-             pop `(fn []
-                    (let [before# @stack
-                          answer# (do ~@body)]
-                      (println (format "%s %s = %s"
-                                       '~name
-                                       (if (empty? before#) "()" before#)
-                                       answer#))
-                      answer#))
-             push `(fn ~args
-                     (let [answer# (do ~@body)]
-                       (println (format "%s %s = %s" '~name ~args answer#))
-                       answer#))
-             (pointer switch )
-             ,`(fn []
-                 (let ~(vec (interleave args (cycle [`(call-piet ~'pop)])))
-                   (let [before# @~name
-                         answer# (do ~@body)]
-                     (println (format "%s %s %s = %s" '~name ~args before# answer#))
-                     answer#)))
-             roll `(fn []
-                     (let ~(vec (interleave args (cycle [`(call-piet ~'pop)])))
-                       (let [before# @~name
-                             answer# (do ~@body)]
-                         (println (format "%s %s %s = %s" '~name ~args before# answer#))
-                         answer#)))
-             `(fn []
-                (println (format "%s {" '~name))
-                (let ~(vec (interleave args (cycle [`(call-piet ~'pop)])))
-                  (let [answer# (call-piet ~'push (do ~@body))]
-                    (print (format "} = %s\n" answer#))
-                    answer#))))))
+(defn piet-update [f m]
+  (piet-push (update-in m [:value]
+               (comp list (partial apply f)))))
 
-(def-piet pop []
-  (let [f (first @stack)]
-    (swap! stack rest)
-    f))
+(defn piet-add [m]
+  (piet-update + (piet-pop (piet-pop  m))))
 
-(def-piet push [n]
-  (swap! stack conj n))
+(defn piet-subtract [m]
+  (piet-update - (piet-pop (piet-pop m))))
 
-(def-piet add [n m]
-  (+ n m))
+(defn piet-multiply [m]
+  (piet-update * (piet-pop (piet-pop m))))
 
-(def-piet subtract [n m]
-  (- n m))
+(defn piet-divide [m]
+  (piet-update / (piet-pop (piet-pop m))))
 
-(def-piet multiply [n m]
-  (* n m))
+(defn piet-mod [m]
+  (piet-update mod (piet-pop (piet-pop m))))
 
-(def-piet divide [n m]
-  (/ n m))
+(defn piet-not [m]
+  (piet-update #(if (zero? %) 1 0)
+               (piet-pop m)))
 
-(def-piet mod [n m]
-  (mod n m))
+(defn piet-greater [m]
+  (piet-update #(if (< %1 %2) 1 0)
+               (piet-pop (piet-pop m))))
 
-(def-piet not [n]
-  (if (zero? n) 1 0))
+(defn rotate [n coll]
+  (if (zero? n)
+    coll
+    (if (pos? n)
+      (rotate (dec n)
+              (concat (rest coll)
+                      (list (first coll))))
+      (rotate (inc n)
+              (cons (last coll)
+                    (butlast coll))))))
 
-(def-piet greater [n m]
-  (if (< n m) 1 0))
+(defn piet-pointer [m]
+  (update-in (let [machine (piet-pop m)]
+               (update-in machine [:dp]
+                 (partial rotate (first (:value machine)))))
+    [:value] empty))
 
-(defn rotate [coll n]
-  (let [[x y] (split-at (+ n (if (pos? n) 0 (count coll))) coll)]
-    (concat y x)))
+(defn piet-switch [m]
+  (update-in (let [machine (piet-pop m)]
+               (update-in machine [:cc]
+                 (partial rotate (first (:value machine)))))
+    [:value] empty))
 
-(def-piet pointer [n]
-  (apply list (swap! pointer rotate n)))
+(defn piet-duplicate [m]
+  (piet-update (partial repeat 2) (piet-pop m)))
 
-(def-piet switch [n]
-  (apply list (swap! switch rotate n)))
+(defn piet-roll [m]
+  (update-in
+   (let [machine (piet-pop (piet-pop m))]
+     (assoc machine
+       :stack (concat (rotate (second (:value machine))
+                              (take (first (:value machine))
+                                    (:stack machine)))
+                      (drop (first (:value machine))
+                            (:stack machine)))))
+   [:value] empty))
 
-(def-piet duplicate [n]
-  (call-piet push n)
-  (identity n))
+(defn piet-in-char [m]
+  (piet-update (partial list (int (first (read-line)))) m))
 
-(def-piet roll [n m]
-  (swap! stack
-         #(concat (rotate (take n %) m)
-                  (drop n %))))
+(defn piet-in-number [m]
+  (piet-update (partial list (eval (read-string (read-line)))) m))
 
-(def-piet in-char []
-  (first (read-line)))
+(defn piet-out-char [m]
+  (let [machine (piet-pop m)]
+    (print (char (first (:value machine))))
+    (update-in machine [:value] empty)))
 
-(def-piet in-number []
-  (eval (read-string (read-line))))
-
-(def-piet out-char [n]
-  ())
-
-(def-piet out-number [n]
-  ())
+(defn piet-out-number [m]
+  (let [machine (piet-pop m)]
+    (print (first (:value machine)))
+    (update-in machine [:value] empty)))
