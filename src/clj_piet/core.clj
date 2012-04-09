@@ -207,3 +207,6 @@
               (recur (update-in m [:dp] (partial rotate 1)) [x y] (inc toggle))
               (recur (update-in m [:cc] (partial rotate 1)) [x y] (inc toggle)))))
         (println "\nFINISHED")))))
+
+(defn -main [image codel-size]
+  (piet-interpreter image codel-size))
