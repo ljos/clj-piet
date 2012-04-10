@@ -9,7 +9,7 @@
 (def lightness-cycle '(light normal dark))
 (def hue-cycle '(red yellow green cyan blue magenta))
 
-(defstruct piet-machine :dp :cc :value :stack)
+(defstruct piet-machine :dp :cc :value :stack :out)
 
 (def colours
   (hash-map [0xFF 0xC0 0xC0] '[light red]
@@ -32,101 +32,86 @@
             [0xC0 0x00 0xC0] '[dark magenta]
             [0xFF 0xFF 0xFF] 'white))
 
-
-(defn piet-pop [m]
-  (update-in (update-in m [:value]
-               (partial cons (peek (:stack m))))
-    [:stack] pop))
-
-(defn piet-push [m]
-  (update-in (update-in m [:stack]
-               (comp #(apply list %) flatten (partial cons (first (:value m)))))
-    [:value]
-    empty))
+(defn push [m]
+  (update-in m [:stack]
+    (partial cons (:value m))))
 
 (defn piet-update [m f n]
-  (piet-push (update-in m [:value]
-               (comp list (partial apply f) (partial take n)))))
+  (push (update-in (assoc m
+                     :value (apply f (reverse (take n (:stack m)))))
+          [:stack] nthnext n)))
 
-(defn piet-add [m]
-  (piet-update (piet-pop (piet-pop m)) + 2))
+(defn pop [m]
+  (update-in m [:stack] next))
 
-(defn piet-subtract [m]
-  (piet-update (piet-pop (piet-pop m)) - 2))
+(defn add [m]
+  (piet-update m + 2))
 
-(defn piet-multiply [m]
-  (piet-update (piet-pop (piet-pop m)) * 2))
+(defn subtract [m]
+  (piet-update m - 2))
 
-(defn piet-divide [m]
-  (piet-update (piet-pop (piet-pop m)) / 2))
+(defn multiply [m]
+  (piet-update m * 2))
 
-(defn piet-mod [m]
-  (piet-update (piet-pop (piet-pop m)) mod 2))
+(defn divide [m]
+  (piet-update m - 2))
 
-(defn piet-not
-  ([m]
-     (piet-update (piet-pop m) #(if (zero? %) 1 0) 1)))
+(defn mod [m]
+  (piet-update m clojure.core/mod 2))
 
-(defn piet-greater [m]
-  (piet-update (piet-pop (piet-pop m))
-               #(if (< %1 %2) 1 0)
-               2))
+(defn not [m]
+  (piet-update m #(if (zero? %) 1 0) 1))
+
+(defn greater [m]
+  (piet-update m #(if (< %1 %2) 1 0) 2))
 
 (defn rotate [n coll]
   (if (zero? n)
     coll
     (if (pos? n)
       (rotate (dec n) (take (count coll) (drop 1 (cycle coll))))
-      (rotate (inc n)
-              (cons (last coll)
-                    (butlast coll))))))
+      (rotate (inc n) (cons (last coll) (butlast coll))))))
 
-(defn piet-pointer [m]
-  (update-in (let [machine (piet-pop m)]
-               (update-in machine [:dp]
-                 (partial rotate (first (:value machine)))))
-    [:value] empty))
+(defn pointer [m]
+  (update-in (update-in m [:dp]
+               (partial rotate (first (:stack m))))
+    [:stack] rest))
 
-(defn piet-switch [m]
-  (update-in (let [machine (piet-pop m)]
-               (update-in machine [:cc]
-                 (partial rotate (first (:value machine)))))
-    [:value] empty))
+(defn switch [m]
+  (update-in (update-in m [:cc]
+               (partial rotate (first (:stack m))))
+    [:stack] rest))
 
-(defn piet-duplicate [m]
-  (piet-update (piet-pop (update-in m [:value] empty))
-               (partial repeat 2)
-               1))
+(defn duplicate [m]
+  (push (assoc m
+          :value (first (:stack m)))))
 
-(defn piet-roll [m]
-  (update-in
-   (let [machine (piet-pop (piet-pop m))]
-     (assoc machine
-       :stack (apply list
-                     (concat (rotate (second (:value machine))
-                                     (take (first (:value machine))
-                                           (:stack machine)))
-                             (drop (first (:value machine))
-                                   (:stack machine))))))
-   [:value] empty))
+(defn roll [m]
+  (let [[k n] (take 2 (:stack m))]
+    (update-in (update-in m [:stack] nnext)
+      [:stack]  (comp (partial apply concat)
+                      (juxt (comp (partial rotate k)
+                                  (partial take n))
+                            (partial drop n))))))
 
-(defn piet-in-char [m]
-  (piet-update m (partial list (int (first (read-line)))) 1))
+(defn in-char [m]
+  (push (assoc m :value (int (first (read-line))))))
 
-(defn piet-in-number [m]
-  (piet-update m (partial list (eval (read-string (read-line)))) 1))
+(defn in-number [m]
+  (push (assoc m
+          :value (eval (read-string (read-line))))))
 
-(defn piet-out-char [m]
-  (let [machine (piet-pop m)]
-    (println (format "OUT: %s "(char (first (:value machine)))))
-    (update-in machine [:value] empty)))
+(defn out-char [m]
+  (update-in (update-in m
+               [:out] str (char (first (:stack m))))
+    [:stack] rest))
 
-(defn piet-out-number [m]
-  (let [machine (piet-pop m)]
-    (println (format "OUT: %s "(first (:value machine))))
-    (update-in machine [:value] empty)))
+(defn out-number [m]
+  (update-in (update-in m
+               [:out] str (first (:stack m)))
+    [:stack] rest))
 
-(defn piet-nop [m]
+(defn nop [m]
   (identity m))
 
 (defn grab-pixels [image codel-size]
@@ -167,12 +152,12 @@
     [(j x) (k y)]))
 
 (defn piet-command [prev-colour next-colour]
-  (let [commands [[piet-nop piet-push piet-pop]
-                  [piet-add piet-subtract piet-multiply]
-                  [piet-divide piet-mod piet-not]
-                  [piet-greater piet-pointer piet-switch]
-                  [piet-duplicate piet-roll piet-in-number]
-                  [piet-in-char piet-out-number piet-out-char]]
+  (let [commands [[#'nop       #'push       #'pop      ]
+                  [#'add       #'subtract   #'multiply ]
+                  [#'divide    #'mod        #'not      ]
+                  [#'greater   #'pointer    #'switch   ]
+                  [#'duplicate #'roll       #'in-number]
+                  [#'in-char   #'out-number #'out-char ]]
         f (fn [l g]
             (if (or (= 'white prev-colour)
                     (= 'white next-colour))
@@ -187,7 +172,7 @@
 
 (defn piet-interpreter [image codel-size]
   (let [codel-map (grab-pixels image codel-size)]
-    (loop [m (struct piet-machine pointer-cycle chooser-cycle nil '())
+    (loop [m (struct piet-machine pointer-cycle chooser-cycle nil [] "")
            [x y] [0 0]
            toggle 0]
       (if (<= toggle 8)
@@ -196,17 +181,16 @@
           (if-let [next-colour (get-in codel-map new-codel)]
             (let [command (piet-command (get-in codel-map [x y])
                                         next-colour)
-                  machine (command
-                           (update-in m [:value] #(do % (list (count codel-block)))))]
+                  machine (command (assoc m :value (count codel-block)))]
               (println (format "\nx:%s, y:%s | %s" x y new-codel))
               (println (format "prev:%s, next:%s" (get-in codel-map [x y]) next-colour))
-              (println (format "command: %s" command))
+              (println (format "command: %s" (:name (meta command))))
               (println (format "machine: %s" machine))
               (recur machine new-codel 0))
-            (if (zero? (mod toggle 2))
+            (if (zero? (clojure.core/mod toggle 2))
               (recur (update-in m [:dp] (partial rotate 1)) [x y] (inc toggle))
               (recur (update-in m [:cc] (partial rotate 1)) [x y] (inc toggle)))))
-        (println "\nFINISHED")))))
+        (println (format "\nOutput: %s" (:out m)))))))
 
 (defn -main [image codel-size]
-  (piet-interpreter image codel-size))
+  (piet-interpreter image (read-string codel-size)))
