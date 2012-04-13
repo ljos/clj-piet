@@ -2,7 +2,7 @@
   (:import javax.imageio.ImageIO)
   (:import java.io.File)
   (:import java.awt.Color)
-  (:use [clojure.set :only (union)]))
+  (:use [clojure.set :only (union difference)]))
 
 (def pointer-cycle '(right down left up))
 (def chooser-cycle '(left right))
@@ -98,8 +98,7 @@
   (push (assoc m :value (int (first (read-line))))))
 
 (defn in-number [m]
-  (push (assoc m
-          :value (eval (read-string (read-line))))))
+  (push (assoc m :value (eval (read-string (read-line))))))
 
 (defn out-char [m]
   (update-in (update-in m
@@ -120,25 +119,36 @@
      (for [x  (range (/ (.getWidth img) codel-size))]
        (vec
         (for [y (range (/ (.getHeight img) codel-size))
-              :let [colour (Color. (.getRGB img (* x codel-size) (* y codel-size)))
+              :let [colour (Color. (.getRGB img (* x  codel-size) (* y codel-size)))
                     c (get colours [(.getRed colour) (.getGreen colour) (.getBlue colour)])]
               :when (not= c [0x00 0x00 0x00])]
           c))))))
 
-(defn find-colour-block-in
-  ([codel-map x y]
-     (if-let [codel-colour (get-in codel-map [x y])]
-       (if (= codel-colour 'white)
-         #{[x y]}
-         (find-colour-block-in codel-map codel-colour x y))
-       #{}))
-  ([codel-map codel-colour x y]
-     (when (= codel-colour (get-in codel-map [x y]))
-       (union #{[x y]} 
-              (find-colour-block-in (assoc-in codel-map [x y] nil) codel-colour (inc x) y)
-              (find-colour-block-in (assoc-in codel-map [x y] nil) codel-colour (dec x) y)
-              (find-colour-block-in (assoc-in codel-map [x y] nil) codel-colour x (inc y))
-              (find-colour-block-in (assoc-in codel-map [x y] nil) codel-colour x (dec y))))))
+(defn- neighbors [l]  
+  (into #{}
+        (mapcat (fn [[x y]]
+                  [[(inc x) y]
+                   [(dec x) y]
+                   [x (inc y)]
+                   [x (dec y)]])
+                l)))
+
+(defn find-colour-block-in [codel-map x y]
+  (if-let [codel-colour (get-in codel-map [x y])]
+    (if (= codel-colour 'white)
+      #{[x y]}
+      (loop [block #{[x y]}
+             nbors #{[x y]}]
+        (if (empty? nbors)
+          block
+          (recur (union block nbors)
+                 (apply (partial
+                         disj
+                         (into #{} (filter (comp (partial = codel-colour)
+                                                 (partial get-in codel-map))
+                                           (neighbors nbors))))
+                        block)))))
+    #{}))
 
 (defn choose-codel [codel-block dp cc]
   (let [[f g h i j k]
@@ -166,15 +176,14 @@
                                  (concat (drop-while (partial not= (g prev-colour)) l)
                                          (take-while (partial not= (g prev-colour)) l))))))
         hue-change (f hue-cycle second)
-        lightness-change (f lightness-cycle first)
-        command (get-in commands [hue-change lightness-change])]
-    command))
+        lightness-change (f lightness-cycle first)]
+    (get-in commands [hue-change lightness-change])))
 
 (defn piet-interpreter [image codel-size]
   (let [codel-map (grab-pixels image codel-size)]
     (loop [m (struct piet-machine pointer-cycle chooser-cycle nil [] "")
            [x y] [0 0]
-           toggle 0]
+           toggle 1]
       (if (<= toggle 8)
         (let [codel-block (find-colour-block-in codel-map x y)
               new-codel (choose-codel codel-block (first (:dp m)) (first (:cc m)))]
@@ -182,14 +191,22 @@
             (let [command (piet-command (get-in codel-map [x y])
                                         next-colour)
                   machine (command (assoc m :value (count codel-block)))]
-              (println (format "\nx:%s, y:%s | %s" x y new-codel))
+              (println (format "\n[%s %s] | %s" x y new-codel))
               (println (format "prev:%s, next:%s" (get-in codel-map [x y]) next-colour))
               (println (format "command: %s" (:name (meta command))))
               (println (format "machine: %s" machine))
-              (recur machine new-codel 0))
+              (recur machine new-codel 1))
             (if (zero? (clojure.core/mod toggle 2))
-              (recur (update-in m [:dp] (partial rotate 1)) [x y] (inc toggle))
-              (recur (update-in m [:cc] (partial rotate 1)) [x y] (inc toggle)))))
+              (let [machine (do (update-in m [:dp] (partial rotate 1)))]
+                (do  (println (format "\n[%s %s] | %s" x y new-codel))
+                     (println (format "command: rotate_dp toggle: %s" toggle))
+                     (println "machine: " machine)
+                     (recur machine [x y] (inc toggle))))
+              (let [machine (do (update-in m [:cc] (partial rotate 1)))]
+                (do  (println (format "\n[%s %s] | %s" x y new-codel))
+                     (println (format "command: rotate_cc toggle: %s" toggle))
+                     (println "machine: " machine)
+                     (recur machine [x y] (inc toggle)))))))
         (println (format "\nOutput: %s" (:out m)))))))
 
 (defn -main [image codel-size]
