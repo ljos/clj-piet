@@ -82,12 +82,12 @@
     [(j x) (k y)]))
 
 (defn call-command [prev-colour next-colour]
-  (let [commands [[#'nop       #'push       #'pop      ]
-                  [#'add       #'subtract   #'multiply ]
-                  [#'divide    #'mod        #'not      ]
-                  [#'greater   #'pointer    #'switch   ]
-                  [#'duplicate #'roll       #'in-number]
-                  [#'in-char   #'out-number #'out-char ]]
+  (let [commands [[#'piet-nop       #'piet-push       #'piet-pop      ]
+                  [#'piet-add       #'piet-subtract   #'piet-multiply ]
+                  [#'piet-divide    #'piet-mod        #'piet-not      ]
+                  [#'piet-greater   #'piet-pointer    #'piet-switch   ]
+                  [#'piet-duplicate #'piet-roll       #'piet-in-number]
+                  [#'piet-in-char   #'piet-out-number #'piet-out-char ]]
         f (fn [l g]
             (if (or (= 'white prev-colour)
                     (= 'white next-colour))

@@ -1,36 +1,37 @@
 (ns clj-piet.commands)
 
-(defn push [m]
+
+(defn piet-push [m]
   (update-in m [:stack]
     (partial cons (:value m))))
 
 (defn piet-update [m f n]
-  (push (update-in (assoc m
+  (piet-push (update-in (assoc m
                      :value (apply f (reverse (take n (:stack m)))))
           [:stack] nthnext n)))
 
-(defn pop [m]
+(defn piet-pop [m]
   (update-in m [:stack] next))
 
-(defn add [m]
+(defn piet-add [m]
   (piet-update m + 2))
 
-(defn subtract [m]
+(defn piet-subtract [m]
   (piet-update m - 2))
 
-(defn multiply [m]
+(defn piet-multiply [m]
   (piet-update m * 2))
 
-(defn divide [m]
+(defn piet-divide [m]
   (piet-update m - 2))
 
-(defn mod [m]
+(defn piet-mod [m]
   (piet-update m clojure.core/mod 2))
 
-(defn not [m]
+(defn piet-not [m]
   (piet-update m #(if (zero? %) 1 0) 1))
 
-(defn greater [m]
+(defn piet-greater [m]
   (piet-update m #(if (< %1 %2) 1 0) 2))
 
 (defn rotate [n coll]
@@ -40,21 +41,21 @@
       (rotate (dec n) (take (count coll) (drop 1 (cycle coll))))
       (rotate (inc n) (cons (last coll) (butlast coll))))))
 
-(defn pointer [m]
+(defn piet-pointer [m]
   (update-in (update-in m [:dp]
                (partial rotate (first (:stack m))))
     [:stack] rest))
 
-(defn switch [m]
+(defn piet-switch [m]
   (update-in (update-in m [:cc]
                (partial rotate (first (:stack m))))
     [:stack] rest))
 
-(defn duplicate [m]
-  (push (assoc m
+(defn piet-duplicate [m]
+  (piet-push (assoc m
           :value (first (:stack m)))))
 
-(defn roll [m]
+(defn piet-roll [m]
   (let [[k n] (take 2 (:stack m))]
     (update-in (update-in m [:stack] nnext)
       [:stack]  (comp (partial apply concat)
@@ -62,21 +63,21 @@
                                   (partial take n))
                             (partial drop n))))))
 
-(defn in-char [m]
-  (push (assoc m :value (int (first (read-line))))))
+(defn piet-in-char [m]
+  (piet-push (assoc m :value (int (first (read-line))))))
 
-(defn in-number [m]
-  (push (assoc m :value (eval (read-string (read-line))))))
+(defn piet-in-number [m]
+  (piet-push (assoc m :value (eval (read-string (read-line))))))
 
-(defn out-char [m]
+(defn piet-out-char [m]
   (update-in (update-in m
                [:out] str (char (first (:stack m))))
     [:stack] rest))
 
-(defn out-number [m]
+(defn piet-out-number [m]
   (update-in (update-in m
                [:out] str (first (:stack m)))
     [:stack] rest))
 
-(defn nop [m]
+(defn piet-nop [m]
   (identity m))
