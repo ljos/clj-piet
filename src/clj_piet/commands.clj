@@ -23,7 +23,7 @@
   (piet-update m * 2))
 
 (defn piet-divide [m]
-  (piet-update m - 2))
+  (piet-update m (comp int /) 2))
 
 (defn piet-mod [m]
   (piet-update m clojure.core/mod 2))
