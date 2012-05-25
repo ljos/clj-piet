@@ -2,7 +2,7 @@
   (:import javax.imageio.ImageIO)
   (:import java.io.File)
   (:import java.awt.Color)
-  (:use [clojure.set :only (union difference)]
+  (:use [clojure.set :only (union)]
         [clj-piet.commands]))
 
 (def pointer-cycle '(right down left up))
@@ -39,19 +39,18 @@
      (for [x  (range (/ (.getWidth img) codel-size))]
        (vec
         (for [y (range (/ (.getHeight img) codel-size))
-              :let [colour (Color. (.getRGB img (* x  codel-size) (* y codel-size)))
-                    c (get colours [(.getRed colour) (.getGreen colour) (.getBlue colour)])]
+              :let [c (Color. (.getRGB img (* x  codel-size) (* y codel-size)))
+                    colour (get colours [(.getRed c) (.getGreen c) (.getBlue c)])]
               :when (not= c [0x00 0x00 0x00])]
-          c))))))
+          colour))))))
 
 (defn- neighbors [l]  
-  (into #{}
-        (mapcat (fn [[x y]]
-                  [[(inc x) y]
-                   [(dec x) y]
-                   [x (inc y)]
-                   [x (dec y)]])
-                l)))
+  (set (mapcat (fn [[x y]]
+                 [[(inc x) y]
+                  [(dec x) y]
+                  [x (inc y)]
+                  [x (dec y)]])
+               l)))
 
 (defn find-colour-block-in [codel-map  [x y]]
   (if-let [codel-colour (get-in codel-map [x y])]
@@ -64,9 +63,9 @@
           (recur (union block nbors)
                  (apply (partial
                          disj
-                         (into #{} (filter (comp (partial = codel-colour)
-                                                 (partial get-in codel-map))
-                                           (neighbors nbors))))
+                         (set (filter (comp (partial = codel-colour)
+                                            (partial get-in codel-map))
+                                      (neighbors nbors))))
                         block)))))
     #{}))
 
