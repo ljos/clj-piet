@@ -35,14 +35,12 @@
 
 (defn grab-pixels [image codel-size]
   (let [img (ImageIO/read (File. image))]
-    (vec
-     (for [x  (range (/ (.getWidth img) codel-size))]
-       (vec
-        (for [y (range (/ (.getHeight img) codel-size))
-              :let [c (Color. (.getRGB img (* x  codel-size) (* y codel-size)))
-                    colour (get colours [(.getRed c) (.getGreen c) (.getBlue c)])]
-              :when (not= c [0x00 0x00 0x00])]
-          colour))))))
+    (vec (for [x  (range (/ (.getWidth img) codel-size))]
+           (vec (for [y (range (/ (.getHeight img) codel-size))
+                      :let [c (Color. (.getRGB img (* x  codel-size) (* y codel-size)))
+                            colour (get colours [(.getRed c) (.getGreen c) (.getBlue c)])]
+                      :when (not= c [0x00 0x00 0x00])]
+                  colour))))))
 
 (defn- neighbors [l]  
   (set (mapcat (fn [[x y]]
@@ -126,12 +124,12 @@
               (println (format "machine: %s" machine))
               (recur machine new-codel 1))
             (if (zero? (clojure.core/mod toggle 2))
-              (let [machine (do (update-in m [:dp] (partial rotate 1)))]
+              (let [machine (update-in m [:dp] (partial rotate 1))]
                 (do  (println (format "\n%s] | %s" [x y] new-codel))
                      (println (format "command: rotate_dp toggle: %s" toggle))
                      (println "machine: " machine)
                      (recur machine [x y] (inc toggle))))
-              (let [machine (do (update-in m [:cc] (partial rotate 1)))]
+              (let [machine (update-in m [:cc] (partial rotate 1))]
                 (do  (println (format "\n%s | %s" [x y] new-codel))
                      (println (format "command: rotate_cc toggle: %s" toggle))
                      (println "machine: " machine)
